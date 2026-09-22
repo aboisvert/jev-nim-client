@@ -6,6 +6,7 @@ type
   JevFailureKind* = enum
     jfkConfig, jfkValidation, jfkApi, jfkConnection, jfkTimeout, jfkResponse
 
+  # Plain object so failures ride in Result without heap allocation or exceptions.
   JevFailure* = object
     failureKind*: JevFailureKind
     configMessage*: string
@@ -91,6 +92,7 @@ proc requestId*(f: JevFailure): Option[string] =
   none(string)
 
 proc parseRetryAfterMs*(headers: Table[string, string]): Option[int] =
+  # Supports TypeSafe's retry-after-ms and standard Retry-After (seconds, numeric only).
   for k, v in headers:
     let lk = k.toLowerAscii
     if lk == "retry-after-ms":
@@ -171,6 +173,6 @@ proc validateApiKey*(raw: string): Result[string, JevFailure] =
 proc envOrDefault*(name, defaultValue: string): string =
   let v = getEnv(name, defaultValue)
   if v.strip().len == 0:
-    defaultValue
+    defaultValue # treat whitespace-only env as unset
   else:
     v.strip()

@@ -14,12 +14,13 @@ type
     defaultHeaders: Table[string, string]
     httpClient: AsyncHttpClient
     executor: RequestExecutor
-    ownsHttpClient: bool
+    ownsHttpClient: bool # see syncclient.JevClient.ownsHttpClient
 
 proc asyncSleep(seconds: float) =
   waitFor sleepAsync(int(seconds * 1000.0))
 
 proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
+  # waitFor runs the async HTTP stack but still exposes the sync RequestExecutor shape.
   proc execute(
       verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
   ): Result[RawResponse, JevFailure] {.gcsafe.} =
@@ -36,7 +37,7 @@ proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
         else:
           HttpPost
       let resp = waitFor client.request(url, httpMethod, body, reqHeaders)
-      let respBody = waitFor resp.body
+      let respBody = waitFor resp.body # body is a Future; must be awaited separately
       var hdrs = initTable[string, string]()
       for k, v in resp.headers:
         hdrs[k.toLowerAscii] = v
@@ -44,6 +45,7 @@ proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
         status: ord(resp.code), body: respBody, headers: hdrs,
       ))
     except CatchableError as e:
+      # Same timeout detection as syncclient.makeSyncExecutor (no typed timeout error).
       if "timeout" in e.msg.toLowerAscii():
         err[RawResponse, JevFailure](timeoutFailure(timeoutSec))
       else:

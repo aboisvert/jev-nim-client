@@ -15,7 +15,7 @@ proc main() =
 
   let models = client.listModelsOrRaise()
   if models.requestId.len > 0:
-    echo "request id: ", models.requestId
+    echo "request id: ", models.requestId # from x-typesafe-request-id header, for support tickets
   for m in models.models:
     echo &"{m.name} ({m.releaseDate}) — {m.description}"
 

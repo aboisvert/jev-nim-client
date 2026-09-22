@@ -19,6 +19,7 @@ type
     defaultHeaders: Table[string, string]
     httpClient: HttpClient
     executor: RequestExecutor
+    # False when caller passed httpClient; close() must not destroy a shared instance.
     ownsHttpClient: bool
 
 proc defaultRequestOptions*(): RequestOptions =
@@ -37,6 +38,7 @@ proc buildDefaultHeaders*(apiKey: string): Table[string, string] =
   result["user-agent"] = UserAgentPrefix & "/" & ClientVersion
 
 proc makeSyncExecutor(client: HttpClient): RequestExecutor =
+  # Closure returned as RequestExecutor so executeWithRetry can stay client-agnostic.
   proc execute(
       verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
   ): Result[RawResponse, JevFailure] {.gcsafe.} =
@@ -51,15 +53,16 @@ proc makeSyncExecutor(client: HttpClient): RequestExecutor =
         elif verb == "POST":
           HttpPost
         else:
-          HttpPost
+          HttpPost # only GET/POST are used today; unknown verbs fall back to POST
       let resp = client.request(url, httpMethod, body, reqHeaders)
       var hdrs = initTable[string, string]()
       for k, v in resp.headers:
-        hdrs[k.toLowerAscii] = v
+        hdrs[k.toLowerAscii] = v # matches wire/errors header lookup (case-insensitive)
       ok[RawResponse, JevFailure](RawResponse(
         status: ord(resp.code), body: resp.body, headers: hdrs,
       ))
     except CatchableError as e:
+      # std/httpclient has no distinct timeout exception type; message is the signal.
       if "timeout" in e.msg.toLowerAscii():
         err[RawResponse, JevFailure](timeoutFailure(timeoutSec))
       else:
@@ -91,7 +94,7 @@ proc newJevClient*(
     if apiKey.len > 0:
       apiKey
     else:
-      getEnv(ApiKeyEnv, "")
+      getEnv(ApiKeyEnv, "") # empty arg means "read TYPESAFE_API_KEY"
   let keyResult = validateApiKey(rawKey)
   if keyResult.isErr:
     return err[JevClient, JevFailure](keyResult.error)
@@ -120,7 +123,7 @@ proc newJevClient*(
   else:
     client.httpClient = newHttpClient()
   if executor.isSome:
-    client.executor = executor.get()
+    client.executor = executor.get() # stub transport in tests without touching the network
   else:
     client.executor = makeSyncExecutor(client.httpClient)
   ok[JevClient, JevFailure](client)
@@ -150,6 +153,7 @@ proc close*(client: JevClient) =
 proc resolveOptions(
     client: JevClient; options: RequestOptions,
 ): (string, float, RetryPolicy, Table[string, string]) =
+  # Per-request fields override client defaults when the corresponding Option is set.
   let model =
     if options.model.isSome:
       options.model.get()
@@ -175,9 +179,9 @@ proc sendRequest(
     options: RequestOptions,
 ): Result[RawResponse, JevFailure] =
   let (model, timeout, retry, headers) = resolveOptions(client, options)
-  discard model
+  discard model # transport layer; model is only embedded in systemOne JSON by the caller
   let url = joinUrl(client.baseUrl, path)
-  let endpoint = verb & " " & url
+  let endpoint = verb & " " & url # stored on API failures for debugging (not sent on the wire)
   executeWithRetry(
     retry,
     client.executor,
@@ -199,6 +203,7 @@ proc systemOne*(
   let validated = validateQuestions(questions)
   if validated.isErr:
     return err[SystemOneResponse, JevFailure](validationFailure(validated.error))
+  # Model comes from options here; sendRequest only handles HTTP + retry.
   let (model, _, _, _) = resolveOptions(client, options)
   let payload = encodeSystemOneBody(state, model, questions)
   let respResult = sendRequest(client, "POST", SystemOnePath, $payload, options)

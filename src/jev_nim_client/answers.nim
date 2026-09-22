@@ -24,10 +24,14 @@ type
     akNoul, akChoice, akScore
 
   Answer* = object
-    answerKind*: AnswerKind
-    noulAns*: NoulAnswer
-    choiceAns*: ChoiceAnswer
-    scoreAns*: ScoreAnswer
+    case answerKind*: AnswerKind
+    of akNoul:
+      noulAns*: NoulAnswer
+    of akChoice:
+      choiceAns*: ChoiceAnswer
+    of akScore:
+      scoreAns*: ScoreAnswer
+  # One variant per question type; unused fields stay at default zero values.
 
   SystemOneResponse* = object
     model*: string

@@ -10,7 +10,7 @@ import std/[strformat, tables]
 import jev_nim_client
 import support
 
-const ConfidenceThreshold = 0.75
+const ConfidenceThreshold = 0.75 # tune for risk tolerance; choice is always set, confidence may be low
 
 proc main() =
   let client = openClient()
@@ -37,6 +37,7 @@ proc main() =
   if route.confidence >= ConfidenceThreshold:
     echo &"AUTO-ROUTE → {route.choice} (confidence {route.confidence:.2f})"
   else:
+    # choice is the argmax; probabilities help humans pick when confidence is below threshold.
     echo &"REVIEW — top choice {route.choice} but confidence only {route.confidence:.2f}"
     echo "Probabilities:"
     for k, p in route.probabilities:

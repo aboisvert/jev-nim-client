@@ -14,6 +14,7 @@ proc main() =
     client.close()
 
   var questions = initOrderedTable[string, Question]()
+  # Table keys are answer ids — use the same string in result.noul("billing"), etc.
   questions["billing"] = noul("Is this about billing?")
   var tone = initOrderedTable[string, string]()
   tone["calm"] = "Calm, neutral wording"
@@ -26,7 +27,7 @@ proc main() =
 
   echo "model: ", result.model
   let billing = result.noul("billing").unwrap()
-  echo &"billing (0–1 yes): {billing.noul:.2f}"
+  echo &"billing (0–1 yes): {billing.noul:.2f}" # noul answers are continuous, not a hard true/false
   let toneAns = result.choice("tone").unwrap()
   echo &"tone: {toneAns.choice} (confidence {toneAns.confidence:.2f})"
 

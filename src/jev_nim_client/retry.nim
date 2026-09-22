@@ -34,6 +34,7 @@ proc defaultRetryPolicy*(): RetryPolicy =
   )
 
 proc backoffDelaySec*(policy: RetryPolicy; attempt: int): float =
+  # attempt is 1-based: first retry waits backoffInitial, then exponential doubling capped at backoffMax.
   if policy.backoffInitial <= 0.0:
     return 0.0
   var delay = policy.backoffInitial
@@ -41,13 +42,14 @@ proc backoffDelaySec*(policy: RetryPolicy; attempt: int): float =
     delay = min(delay * 2.0, policy.backoffMax)
   if policy.backoffJitter > 0.0:
     let jitter = rand(0.0 .. policy.backoffJitter * delay)
-    delay = max(0.0, delay - jitter)
+    delay = max(0.0, delay - jitter) # subtract so retries spread below the cap, not above it
   delay
 
 proc shouldRetryHttp*(
     policy: RetryPolicy; attempt: int; status: int; headers: Table[string, string];
     elapsedSec: float,
 ): (bool, float) =
+  # attempt counts failures so far; maxRetries is how many *retries* after the initial request.
   if attempt >= policy.maxRetries:
     return (false, 0.0)
   if status notin policy.httpStatuses:
@@ -56,10 +58,10 @@ proc shouldRetryHttp*(
   if policy.respectRetryAfter:
     let ra = parseRetryAfterMs(headers)
     if ra.isSome:
-      delay = max(delay, ra.get().float / 1000.0)
+      delay = max(delay, ra.get().float / 1000.0) # never sleep less than the server asked
   if policy.totalBudgetSec.isSome:
     if elapsedSec + delay >= policy.totalBudgetSec.get():
-      return (false, 0.0)
+      return (false, 0.0) # include sleep time so budget caps total wall-clock wait
   (true, delay)
 
 proc shouldRetryFailure*(
@@ -79,9 +81,9 @@ proc shouldRetryFailure*(
     if not policy.retryTimeout:
       return (false, 0.0)
   else:
-    return (false, 0.0)
+    return (false, 0.0) # config, validation, and response parse errors are not retried
   var delay = backoffDelaySec(policy, attempt + 1)
   if policy.totalBudgetSec.isSome:
     if elapsedSec + delay >= policy.totalBudgetSec.get():
-      return (false, 0.0)
+      return (false, 0.0) # include sleep time so budget caps total wall-clock wait
   (true, delay)

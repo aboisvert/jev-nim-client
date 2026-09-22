@@ -67,7 +67,7 @@ proc encodeQuestion*(q: Question): JsonNode =
       if v.isSome:
         crit[k] = encodeJsonContent(v.get())
       else:
-        crit[k] = newJNull()
+        crit[k] = newJNull() # option listed without description; API still expects the key
     obj["criteria"] = crit
   of qkScore:
     obj["type"] = newJString("score")
@@ -132,6 +132,7 @@ proc decodeJsonValue*(node: JsonNode): Result[JsonValue, string] =
     ok[JsonValue, string](jsonObj(obj))
 
 proc decodeJsonContent*(node: JsonNode): Result[JsonContent, string] =
+  # API allows state/instructions as a JSON string, object, or array — not only strings.
   if node.kind == JString:
     return ok[JsonContent, string](content(node.getStr()))
   if node.kind == JObject:
@@ -158,6 +159,7 @@ proc headerTable*(headers: seq[(string, string)]): Table[string, string] =
     result[k.toLowerAscii] = v
 
 proc requestIdFromHeaders*(headers: Table[string, string]): string =
+  # Correlation id is response header only (x-typesafe-request-id), not in JSON body.
   if RequestIdHeader in headers:
     headers[RequestIdHeader]
   else:
@@ -304,5 +306,6 @@ proc mergeHeaders*(
   result = base
   for k, v in extra:
     let lk = k.toLowerAscii
+    # Auth, accept, and user-agent come from buildDefaultHeaders and must not be overridden.
     if lk notin ["authorization", "accept", "user-agent"]:
       result[lk] = v

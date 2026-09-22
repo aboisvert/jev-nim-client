@@ -2,7 +2,7 @@ import std/[tables, options]
 import content, results_shim
 
 const
-  MaxChoiceOptions* = 255
+  MaxChoiceOptions* = 255 # API limit; enforced client-side before POST
   MinScoreLevels* = 2
   MaxScoreLevels* = 10
 
@@ -33,6 +33,7 @@ type
     score*: Score
 
   Questions* = OrderedTable[string, Question]
+  # OrderedTable keeps question id order stable in JSON (matches other TypeSafe SDKs).
 
 proc noul*(instructions: string): Question =
   Question(questionKind: qkNoul, noul: Noul(instructions: some content(instructions)))

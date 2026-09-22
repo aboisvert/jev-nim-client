@@ -19,4 +19,4 @@ proc main() {.async.} =
   let dept = result.choice("department").unwrap().choice
   echo &"department: {dept}"
 
-waitFor main()
+waitFor main() # Nim async entry: proc main {.async.} must be driven from sync top level

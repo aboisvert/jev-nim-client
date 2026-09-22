@@ -21,6 +21,7 @@ type
     text*: string
     obj*: OrderedTable[string, JsonValue]
     arr*: seq[JsonValue]
+  # JsonContent is API "state"/instructions (string or structured); JsonValue is nested data inside it.
 
 proc jsonNull*(): JsonValue =
   JsonValue(valueKind: jvkNull)

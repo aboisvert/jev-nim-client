@@ -18,7 +18,7 @@ proc main() =
 
   echo "model: ", result.model
   if result.usage.inputTokens != none(int):
-    echo "input tokens: ", result.usage.inputTokens.get()
+    echo "input tokens: ", result.usage.inputTokens.get() # usage fields are optional in the API
 
   let urgent = result.noul("is_urgent").unwrap().noul
   echo &"is_urgent: {urgent:.2f}"
@@ -30,6 +30,7 @@ proc main() =
 
   let frustration = result.score("frustration").unwrap()
   echo &"frustration score: {frustration.score:.2f} (confidence {frustration.confidence:.2f})"
+  # Legend keys ("0", "1", …) align with score level indices in probabilities.
   for idx, label in frustration.legend:
     let prob = frustration.probabilities.getOrDefault(idx, 0.0)
     if label.contentKind == jckString:

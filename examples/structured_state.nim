@@ -17,7 +17,7 @@ proc main() =
   stateObj["subject"] = jsonStr("Payout failure")
   stateObj["body"] = jsonStr(ExampleState)
   stateObj["channel"] = jsonStr("email")
-  let state = jsonContentObj(stateObj)
+  let state = jsonContentObj(stateObj) # state can be JSON object, not only a plain string
 
   var duplicateRef = initOrderedTable[string, JsonValue]()
   duplicateRef["name"] = jsonStr("John Smith")
@@ -29,6 +29,7 @@ proc main() =
     "Is the message from the same person as `potential_duplicate`?",
   )
   let instructions = jsonContentObj(instructionsObj)
+  # noul() accepts JsonContent instructions so the model sees structured context, not one blob.
 
   var questions = initOrderedTable[string, Question]()
   questions["same_person"] = noul(instructions)

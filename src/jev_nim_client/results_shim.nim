@@ -43,6 +43,7 @@ func error*[T, E](r: Result[T, E]): E =
   r.e
 
 template valueOr*(r: Result; errBody: untyped): untyped =
+  # On err, binds the error value as `failure` inside errBody (e.g. raise or early return).
   if r.ok:
     when compiles(r.v):
       r.v

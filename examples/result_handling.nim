@@ -15,7 +15,7 @@ proc demoResult() =
     return
   let client = clientResult.unwrap()
   defer:
-    client.close()
+    client.close() # only reached on success — errors return before unwrap
   echo "Result path: client created"
 
 proc demoRaise() =
@@ -23,7 +23,7 @@ proc demoRaise() =
     discard newJevClientOrRaise(apiKey = getEnv(ApiKeyEnv, ""))
     echo "Raise path: client created"
   except JevError as e:
-    echo "Raise path: ", e.msg
+    echo "Raise path: ", e.msg # typed subclasses (JevAuthenticationError, etc.) for HTTP errors
 
 proc main() =
   echo "=== Result[T, JevFailure] ==="
