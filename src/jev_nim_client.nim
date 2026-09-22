@@ -1,6 +1,20 @@
-# Main module for the jev_nim_client package.
-# Re-export public API from submodules here as the library grows.
+## Nim client for the TypeSafe System One (Jev) API.
+##
+## Sync usage:
+##
+## .. code-block:: nim
+##    import jev_nim_client
+##    let client = newJevClient(apiKey = "ts_...").unwrap()
+##    defer: client.close()
+##    let result = client.systemOne(
+##      "Help! My payouts have been failing.",
+##      initOrderedTable({"is_urgent": noul("Does this convey urgency?")}),
+##    ).unwrap()
+##
+## Async usage: ``import jev_nim_client/asyncclient``
 
-proc add*(x, y: int): int =
-  ## Placeholder API — replace with JEV client entry points.
-  x + y
+import jev_nim_client/syncclient
+import jev_nim_client/asyncclient
+
+export syncclient
+export asyncclient

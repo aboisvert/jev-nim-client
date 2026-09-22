@@ -6,5 +6,15 @@ nimcache/
 /jev_nim_client
 /nimbledocs/
 
+# Example binaries (nim c examples/foo.nim)
+/examples/quickstart
+/examples/system_one_batch
+/examples/list_models
+/examples/structured_state
+/examples/async_system_one
+/examples/confidence_routing
+/examples/result_handling
+/examples/support
+
 # Nimble lock (optional — commit if you want reproducible deps)
 # nimble.lock
