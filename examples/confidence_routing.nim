@@ -31,6 +31,9 @@ proc main() =
     echo "missing answer for department: ", failure
     quit 1
 
+  echo "result: ", result
+  echo ""
+
   if route.confidence >= ConfidenceThreshold:
     echo &"AUTO-ROUTE → {route.choice} (confidence {route.confidence:.2f})"
   else:
