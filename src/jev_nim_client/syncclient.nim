@@ -1,7 +1,7 @@
 import std/[httpclient, os, tables, options, strutils, json]
-import constants, content, questions, answers, errors, retry, wire, requestloop, results_shim
+import constants, content, questions, answers, errors, retry, wire, requestloop, results
 
-export content, questions, answers, errors, retry, results_shim
+export content, questions, answers, errors, retry, results
 export requestloop.SyncRequestExecutor
 
 type
@@ -58,15 +58,15 @@ proc makeSyncExecutor(client: HttpClient): SyncRequestExecutor =
       var hdrs = initTable[string, string]()
       for k, v in resp.headers:
         hdrs[k.toLowerAscii] = v # matches wire/errors header lookup (case-insensitive)
-      ok[RawResponse, JevFailure](RawResponse(
+      ok(RawResponse(
         status: ord(resp.code), body: resp.body, headers: hdrs,
       ))
     except CatchableError as e:
       # std/httpclient has no distinct timeout exception type; message is the signal.
       if "timeout" in e.msg.toLowerAscii():
-        err[RawResponse, JevFailure](timeoutFailure(timeoutSec))
+        err(timeoutFailure(timeoutSec))
       else:
-        err[RawResponse, JevFailure](connectionFailure(e.msg))
+        err(connectionFailure(e.msg))
   execute
 
 proc joinUrl*(baseUrl, path: string): string =
@@ -95,9 +95,7 @@ proc newJevClient*(
       apiKey
     else:
       getEnv(ApiKeyEnv, "") # empty arg means "read TYPESAFE_API_KEY"
-  let keyResult = validateApiKey(rawKey)
-  if keyResult.isErr:
-    return err[JevClient, JevFailure](keyResult.error)
+  let key = ?validateApiKey(rawKey)
   let resolvedBase =
     if baseUrl.len > 0:
       baseUrl.strip()
@@ -110,12 +108,12 @@ proc newJevClient*(
       envOrDefault(DefaultModelEnv, DefaultModel)
 
   var client = JevClient(
-    apiKey: keyResult.unwrap(),
+    apiKey: key,
     baseUrl: resolvedBase,
     defaultModel: resolvedModel,
     timeoutSec: timeoutSec,
     retryPolicy: retryPolicy,
-    defaultHeaders: mergeHeaders(buildDefaultHeaders(keyResult.unwrap()), extraHeaders),
+    defaultHeaders: mergeHeaders(buildDefaultHeaders(key), extraHeaders),
     ownsHttpClient: httpClient.isNone,
   )
   if httpClient.isSome:
@@ -126,7 +124,7 @@ proc newJevClient*(
     client.executor = executor.get() # stub transport in tests without touching the network
   else:
     client.executor = makeSyncExecutor(client.httpClient)
-  ok[JevClient, JevFailure](client)
+  ok(client)
 
 proc newJevClientOrRaise*(
     apiKey = "";
@@ -142,7 +140,7 @@ proc newJevClientOrRaise*(
     apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders, executor,
     httpClient,
   ).valueOr:
-    raiseFailure(failure)
+    raiseFailure(error)
 
 proc close*(client: JevClient) =
   if client.isNil:
@@ -202,14 +200,11 @@ proc systemOne*(
 ): Result[SystemOneResponse, JevFailure] =
   let validated = validateQuestions(questions)
   if validated.isErr:
-    return err[SystemOneResponse, JevFailure](validationFailure(validated.error))
+    return err(validationFailure(validated.unsafeError))
   # Model comes from options here; sendRequest only handles HTTP + retry.
   let (model, _, _, _) = resolveOptions(client, options)
   let payload = encodeSystemOneBody(state, model, questions)
-  let respResult = sendRequest(client, "POST", SystemOnePath, $payload, options)
-  if respResult.isErr:
-    return err[SystemOneResponse, JevFailure](respResult.error)
-  let httpResp = respResult.unwrap()
+  let httpResp = ?sendRequest(client, "POST", SystemOnePath, $payload, options)
   decodeSystemOneResponse(httpResp.body, httpResp.headers)
 
 proc systemOne*(
@@ -227,7 +222,7 @@ proc systemOneOrRaise*(
     options = defaultRequestOptions(),
 ): SystemOneResponse =
   systemOne(client, state, questions, options).valueOr:
-    raiseFailure(failure)
+    raiseFailure(error)
 
 proc systemOneOrRaise*(
     client: JevClient;
@@ -240,14 +235,11 @@ proc systemOneOrRaise*(
 proc listModels*(
     client: JevClient; options = defaultRequestOptions(),
 ): Result[ListModelsResponse, JevFailure] =
-  let respResult = sendRequest(client, "GET", ModelsPath, "", options)
-  if respResult.isErr:
-    return err[ListModelsResponse, JevFailure](respResult.error)
-  let httpResp = respResult.unwrap()
+  let httpResp = ?sendRequest(client, "GET", ModelsPath, "", options)
   decodeListModelsResponse(httpResp.body, httpResp.headers)
 
 proc listModelsOrRaise*(
     client: JevClient; options = defaultRequestOptions(),
 ): ListModelsResponse =
   listModels(client, options).valueOr:
-    raiseFailure(failure)
+    raiseFailure(error)

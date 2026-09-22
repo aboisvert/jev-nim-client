@@ -1,5 +1,5 @@
 import std/[tables, options]
-import content, results_shim
+import content, results
 
 type
   Usage* = object
@@ -50,27 +50,27 @@ type
 
 proc noul*(resp: SystemOneResponse; id: string): Result[NoulAnswer, string] =
   if id notin resp.answers:
-    return err[NoulAnswer, string]("answer not found: " & id)
+    return err("answer not found: " & id)
   let ans = resp.answers[id]
   if ans.answerKind != akNoul:
-    return err[NoulAnswer, string]("answer '" & id & "' is not a noul")
-  ok[NoulAnswer, string](ans.noulAns)
+    return err("answer '" & id & "' is not a noul")
+  ok(ans.noulAns)
 
 proc choice*(resp: SystemOneResponse; id: string): Result[ChoiceAnswer, string] =
   if id notin resp.answers:
-    return err[ChoiceAnswer, string]("answer not found: " & id)
+    return err("answer not found: " & id)
   let ans = resp.answers[id]
   if ans.answerKind != akChoice:
-    return err[ChoiceAnswer, string]("answer '" & id & "' is not a choice")
-  ok[ChoiceAnswer, string](ans.choiceAns)
+    return err("answer '" & id & "' is not a choice")
+  ok(ans.choiceAns)
 
 proc score*(resp: SystemOneResponse; id: string): Result[ScoreAnswer, string] =
   if id notin resp.answers:
-    return err[ScoreAnswer, string]("answer not found: " & id)
+    return err("answer not found: " & id)
   let ans = resp.answers[id]
   if ans.answerKind != akScore:
-    return err[ScoreAnswer, string]("answer '" & id & "' is not a score")
-  ok[ScoreAnswer, string](ans.scoreAns)
+    return err("answer '" & id & "' is not a score")
+  ok(ans.scoreAns)
 
 proc nouls*(resp: SystemOneResponse): OrderedTable[string, NoulAnswer] =
   result = initOrderedTable[string, NoulAnswer]()

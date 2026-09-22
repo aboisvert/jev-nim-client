@@ -1,5 +1,5 @@
 import std/[tables, options]
-import content, results_shim
+import content, results
 
 const
   MaxChoiceOptions* = 255 # API limit; enforced client-side before POST
@@ -94,19 +94,19 @@ proc score*(instructions: JsonContent; levels: openArray[JsonContent]): Question
 
 proc validateQuestions*(questions: Questions): Result[void, string] =
   if questions.len == 0:
-    return err[void, string]("questions must not be empty")
+    return err("questions must not be empty")
   for id, q in questions:
     case q.questionKind
     of qkNoul:
       discard
     of qkChoice:
       if q.choice.criteria.len == 0:
-        return err[void, string]("choice question '" & id & "' must have at least one option")
+        return err("choice question '" & id & "' must have at least one option")
       if q.choice.criteria.len > MaxChoiceOptions:
-        return err[void, string]("choice question '" & id & "' exceeds " & $MaxChoiceOptions & " options")
+        return err("choice question '" & id & "' exceeds " & $MaxChoiceOptions & " options")
     of qkScore:
       if q.score.criteria.len < MinScoreLevels:
-        return err[void, string]("score question '" & id & "' must have at least " & $MinScoreLevels & " levels")
+        return err("score question '" & id & "' must have at least " & $MinScoreLevels & " levels")
       if q.score.criteria.len > MaxScoreLevels:
-        return err[void, string]("score question '" & id & "' exceeds " & $MaxScoreLevels & " levels")
-  ok[void, string]()
+        return err("score question '" & id & "' exceeds " & $MaxScoreLevels & " levels")
+  ok()

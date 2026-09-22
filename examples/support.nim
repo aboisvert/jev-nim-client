@@ -15,14 +15,16 @@ proc ensureApiKey*() =
 proc openClient*(): JevClient =
   ensureApiKey()
   newJevClient().valueOr:
-    echo "Could not create client: ", failure.message()
+    echo "Could not create client: ", error.message()
     quit 1
 
 proc openAsyncClient*(): AsyncJevClient =
   ensureApiKey()
-  newAsyncJevClient().valueOr:
-    echo "Could not create client: ", failure.message()
+  let created = newAsyncJevClient()
+  if created.isErr:
+    echo "Could not create client: ", created.error.message()
     quit 1
+  created.get()
 
 proc billingFanOutQuestions*(): Questions =
   # Several unrelated questions in one systemOne call — one HTTP round trip, shared state context.

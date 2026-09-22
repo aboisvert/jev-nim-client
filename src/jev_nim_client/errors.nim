@@ -1,5 +1,5 @@
 import std/[os, strutils, tables, options]
-import results_shim
+import results
 import constants
 
 type
@@ -160,15 +160,15 @@ proc raiseFailure*(f: JevFailure) {.noreturn.} =
 proc validateApiKey*(raw: string): Result[string, JevFailure] =
   let key = raw.strip()
   if key.len == 0:
-    return err[string, JevFailure](configFailure("API key is missing or empty"))
+    return err(configFailure("API key is missing or empty"))
   for ch in key:
     if ord(ch) < 32 or ord(ch) == 127:
-      return err[string, JevFailure](configFailure("API key contains control characters"))
+      return err(configFailure("API key contains control characters"))
     if ord(ch) > 127:
-      return err[string, JevFailure](configFailure("API key contains non-ASCII characters"))
+      return err(configFailure("API key contains non-ASCII characters"))
   if key.contains(' ') or key.contains('\t'):
-    return err[string, JevFailure](configFailure("API key contains whitespace"))
-  ok[string, JevFailure](key)
+    return err(configFailure("API key contains whitespace"))
+  ok(key)
 
 proc envOrDefault*(name, defaultValue: string): string =
   let v = getEnv(name, defaultValue)

@@ -52,7 +52,7 @@ proc fakeSyncTransport(
   doAssert url.endsWith("/v1/systemone")
   var hdrs = initTable[string, string]()
   hdrs["x-typesafe-request-id"] = "abc"
-  ok[RawResponse, JevFailure](RawResponse(
+  ok(RawResponse(
     status: 200, body: sampleSystemOneResponse, headers: hdrs,
   ))
 
@@ -63,9 +63,9 @@ proc flakySyncTransport(
   if flakyTransportCalls == 1:
     var hdrs = initTable[string, string]()
     hdrs["retry-after-ms"] = "1"
-    ok[RawResponse, JevFailure](RawResponse(status: 429, body: "slow down", headers: hdrs))
+    ok(RawResponse(status: 429, body: "slow down", headers: hdrs))
   else:
-    ok[RawResponse, JevFailure](RawResponse(
+    ok(RawResponse(
       status: 200, body: sampleModelsResponse, headers: initTable[string, string](),
     ))
 
@@ -73,7 +73,7 @@ proc fakeAsyncTransport(
     verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
 ): Future[Result[RawResponse, JevFailure]] {.async.} =
   inc asyncTransportCalls
-  ok[RawResponse, JevFailure](RawResponse(
+  ok(RawResponse(
     status: 200, body: sampleSystemOneResponse, headers: initTable[string, string](),
   ))
 
@@ -104,13 +104,13 @@ test "encode all question types":
 test "decode system one response":
   var headers = initTable[string, string]()
   headers["x-typesafe-request-id"] = "req_123"
-  let decoded = decodeSystemOneResponse(sampleSystemOneResponse, headers).unwrap()
+  let decoded = decodeSystemOneResponse(sampleSystemOneResponse, headers).get()
   check decoded.model == "jev-1.13.0"
   check decoded.requestId == "req_123"
   check decoded.usage.inputTokens == some(296)
-  check decoded.noul("is_urgent").unwrap().noul == 0.95
-  check decoded.choice("department").unwrap().choice == "billing"
-  check decoded.score("frustration").unwrap().score == 1.05
+  check decoded.noul("is_urgent").get().noul == 0.95
+  check decoded.choice("department").get().choice == "billing"
+  check decoded.score("frustration").get().score == 1.05
 
 test "validate questions rejects empty and short score rubrics":
   var empty = initOrderedTable[string, Question]()
@@ -148,15 +148,15 @@ test "sync client uses fake transport":
     apiKey = "ts_test_key_1234567890",
     baseUrl = "https://example.test",
     executor = some SyncRequestExecutor(fakeSyncTransport),
-  ).unwrap()
+  ).get()
   defer:
     client.close()
 
   var questions = initOrderedTable[string, Question]()
   questions["is_urgent"] = noul("Does this convey urgency?")
-  let result = client.systemOne("Help!", questions).unwrap()
+  let result = client.systemOne("Help!", questions).get()
   check syncTransportCalls == 1
-  check result.noul("is_urgent").unwrap().noul == 0.95
+  check result.noul("is_urgent").get().noul == 0.95
 
 test "sync client retries 429 then succeeds":
   flakyTransportCalls = 0
@@ -171,11 +171,11 @@ test "sync client retries 429 then succeeds":
     baseUrl = "https://example.test",
     retryPolicy = policy,
     executor = some SyncRequestExecutor(flakySyncTransport),
-  ).unwrap()
+  ).get()
   defer:
     client.close()
 
-  let models = client.listModels().unwrap()
+  let models = client.listModels().get()
   check flakyTransportCalls == 2
   check models.models[0].name == "jev-latest"
 
@@ -185,14 +185,14 @@ test "async client uses fake transport":
     apiKey = "ts_test_key_1234567890",
     baseUrl = "https://example.test",
     executor = some AsyncRequestExecutor(fakeAsyncTransport),
-  ).unwrap()
+  ).get()
   defer:
     client.close()
   var questions = initOrderedTable[string, Question]()
   questions["is_urgent"] = noul("Does this convey urgency?")
-  let result = waitFor(client.systemOne("Help!", questions)).unwrap()
+  let result = waitFor(client.systemOne("Help!", questions)).get()
   check asyncTransportCalls == 1
-  check result.noul("is_urgent").unwrap().noul == 0.95
+  check result.noul("is_urgent").get().noul == 0.95
 
 test "raiseFailure maps 401 to authentication error":
   let failure = apiFailure(401, "nope", "POST https://example.test/v1/systemone", initTable[string, string]())

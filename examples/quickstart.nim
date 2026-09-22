@@ -23,13 +23,13 @@ proc main() =
   questions["tone"] = choice("What is the tone?", tone)
 
   let result = client.systemOne(ExampleState, questions).valueOr:
-    echo "systemOne failed: ", failure.message()
+    echo "systemOne failed: ", error.message()
     quit 1
 
   echo "model: ", result.model
-  let billing = result.noul("billing").unwrap()
+  let billing = result.noul("billing").get()
   echo &"billing (0–1 yes): {billing.noul:.2f}" # noul answers are continuous, not a hard true/false
-  let toneAns = result.choice("tone").unwrap()
+  let toneAns = result.choice("tone").get()
   echo &"tone: {toneAns.choice} (confidence {toneAns.confidence:.2f})"
 
 main()

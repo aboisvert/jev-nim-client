@@ -14,9 +14,9 @@ proc main() {.async.} =
     client.close()
 
   let questions = billingFanOutQuestions()
-  let result = (await client.systemOne(ExampleState, questions)).unwrap()
+  let result = (await client.systemOne(ExampleState, questions)).get()
   echo "model: ", result.model
-  let dept = result.choice("department").unwrap().choice
+  let dept = result.choice("department").get().choice
   echo &"department: {dept}"
 
 waitFor main() # Nim async entry: proc main {.async.} must be driven from sync top level

@@ -1,5 +1,5 @@
 import std/[asyncdispatch, os, tables, times]
-import errors, retry, results_shim
+import errors, retry, results
 
 type
   RawResponse* = object
@@ -24,9 +24,9 @@ proc classifyHttpResponse*(
     resp: RawResponse; endpoint: string,
 ): Result[RawResponse, JevFailure] =
   if resp.status >= 200 and resp.status < 300:
-    ok[RawResponse, JevFailure](resp)
+    ok(resp)
   else:
-    err[RawResponse, JevFailure](apiFailure(resp.status, resp.body, endpoint, resp.headers))
+    err(apiFailure(resp.status, resp.body, endpoint, resp.headers))
 
 template retryHttpLoop(
     policy: RetryPolicy;
@@ -39,25 +39,25 @@ template retryHttpLoop(
   while true:
     let execResult = execCall
     if execResult.isErr:
-      let failure = execResult.error
+      let failure = execResult.unsafeError
       let elapsed = epochTime() - start
       let (retry, delay) = shouldRetryFailure(policy, attempt, failure, elapsed)
       if not retry:
-        return err[RawResponse, JevFailure](failure)
+        return Result[RawResponse, JevFailure].err(failure)
       sleepProc(delay)
       inc attempt
       continue
 
-    let resp = execResult.unwrap()
+    let resp = execResult.get()
     let classified = classifyHttpResponse(resp, endpoint)
     if classified.isOk:
       return classified
 
-    let failure = classified.error
+    let failure = classified.unsafeError
     let elapsed = epochTime() - start
     let (retry, delay) = shouldRetryFailure(policy, attempt, failure, elapsed)
     if not retry:
-      return err[RawResponse, JevFailure](failure)
+      return Result[RawResponse, JevFailure].err(failure)
     sleepProc(delay)
     inc attempt
 
@@ -90,24 +90,24 @@ proc executeWithRetryAsync*(
   while true:
     let execResult = await executor(verb, url, body, headers, timeoutSec)
     if execResult.isErr:
-      let failure = execResult.error
+      let failure = execResult.unsafeError
       let elapsed = epochTime() - start
       let (retry, delay) = shouldRetryFailure(policy, attempt, failure, elapsed)
       if not retry:
-        return err[RawResponse, JevFailure](failure)
+        return Result[RawResponse, JevFailure].err(failure)
       await sleepAsync(int(delay * 1000.0))
       inc attempt
       continue
 
-    let resp = execResult.unwrap()
+    let resp = execResult.get()
     let classified = classifyHttpResponse(resp, endpoint)
     if classified.isOk:
       return classified
 
-    let failure = classified.error
+    let failure = classified.unsafeError
     let elapsed = epochTime() - start
     let (retry, delay) = shouldRetryFailure(policy, attempt, failure, elapsed)
     if not retry:
-      return err[RawResponse, JevFailure](failure)
+      return Result[RawResponse, JevFailure].err(failure)
     await sleepAsync(int(delay * 1000.0))
     inc attempt

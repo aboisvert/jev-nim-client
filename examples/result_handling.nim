@@ -13,9 +13,9 @@ proc demoResult() =
   if clientResult.isErr:
     echo "Result path: ", clientResult.error.message()
     return
-  let client = clientResult.unwrap()
+  let client = clientResult.get()
   defer:
-    client.close() # only reached on success — errors return before unwrap
+    client.close() # only reached on success — errors return before get()
   echo "Result path: client created"
 
 proc demoRaise() =

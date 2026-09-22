@@ -25,10 +25,10 @@ proc main() =
   questions["department"] = choice("Which team should handle this?", dept)
 
   let result = client.systemOne(ExampleState, questions).valueOr:
-    echo "systemOne failed: ", failure.message()
+    echo "systemOne failed: ", error.message()
     quit 1
   let route = result.choice("department").valueOr:
-    echo "missing answer for department: ", failure
+    echo "missing answer for department: ", error
     quit 1
 
   echo "result: ", result

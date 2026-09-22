@@ -20,15 +20,15 @@ proc main() =
   if result.usage.inputTokens != none(int):
     echo "input tokens: ", result.usage.inputTokens.get() # usage fields are optional in the API
 
-  let urgent = result.noul("is_urgent").unwrap().noul
+  let urgent = result.noul("is_urgent").get().noul
   echo &"is_urgent: {urgent:.2f}"
 
-  let dept = result.choice("department").unwrap()
+  let dept = result.choice("department").get()
   echo &"department: {dept.choice}"
   for k, p in dept.probabilities:
     echo &"  P({k}) = {p:.2f}"
 
-  let frustration = result.score("frustration").unwrap()
+  let frustration = result.score("frustration").get()
   echo &"frustration score: {frustration.score:.2f} (confidence {frustration.confidence:.2f})"
   # Legend keys ("0", "1", …) align with score level indices in probabilities.
   for idx, label in frustration.legend:

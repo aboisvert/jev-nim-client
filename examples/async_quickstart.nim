@@ -20,14 +20,16 @@ proc main() {.async.} =
   tone["angry"] = "Angry or escalatory wording"
   questions["tone"] = choice("What is the tone?", tone)
 
-  let result = (await client.systemOne(ExampleState, questions)).valueOr:
-    echo "systemOne failed: ", failure.message()
+  let systemOneResult = await client.systemOne(ExampleState, questions)
+  if systemOneResult.isErr:
+    echo "systemOne failed: ", systemOneResult.unsafeError.message()
     quit 1
+  let result = systemOneResult.get()
 
   echo "model: ", result.model
-  let billing = result.noul("billing").unwrap()
+  let billing = result.noul("billing").get()
   echo &"billing (0–1 yes): {billing.noul:.2f}"
-  let toneAns = result.choice("tone").unwrap()
+  let toneAns = result.choice("tone").get()
   echo &"tone: {toneAns.choice} (confidence {toneAns.confidence:.2f})"
 
 waitFor main()

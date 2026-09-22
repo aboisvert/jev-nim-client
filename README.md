@@ -46,17 +46,17 @@ import std/tables
 import jev_nim_client
 
 proc main() =
-  let client = newJevClient(apiKey = "ts_...").unwrap()
+  let client = newJevClient(apiKey = "ts_...").get()
   defer: client.close()
 
   var questions = initOrderedTable[string, Question]()
   questions["billing"] = noul("Is this about billing?")
 
   let state = "Help! My payouts have been failing for 3 days."
-  let result = client.systemOne(state, questions).unwrap()
+  let result = client.systemOne(state, questions).get()
 
   echo result.model
-  echo result.noul("billing").unwrap().noul  # 0.0–1.0
+  echo result.noul("billing").get().noul  # 0.0–1.0
 
 main()
 ```
@@ -72,11 +72,11 @@ import std/[asyncdispatch, tables]
 import jev_nim_client
 
 proc main() {.async.} =
-  let client = newAsyncJevClient().unwrap()
+  let client = newAsyncJevClient().get()
   defer: client.close()
   var questions = initOrderedTable[string, Question]()
   questions["is_urgent"] = noul("Does this convey urgency?")
-  let result = (await client.systemOne("Help!", questions)).unwrap()
+  let result = (await client.systemOne("Help!", questions)).get()
 
 waitFor main()
 ```
@@ -96,7 +96,7 @@ Import `jev_nim_client` to get sync and async clients plus helpers:
 
 - **State** can be a `string` or structured `JsonContent` (see `examples/structured_state.nim`).
 - **Questions** are an `OrderedTable[string, Question]` built with `noul`, `choice`, and `score`.
-- **Errors**: prefer `.valueOr:` / `isErr` on `Result`; or use `newJevClientOrRaise`, `systemOneOrRaise`, and catch `JevError` subclasses.
+- **Errors**: library APIs return [`results`](https://github.com/arnetheduck/nim-results) `Result` values — use `isErr` / `.error`, `.get()`, `?` inside procs, `.valueOr:` (with `error` in the block), or `*OrRaise` helpers and catch `JevError` subclasses.
 
 ## Examples
 

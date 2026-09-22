@@ -1,5 +1,5 @@
 import std/[asyncdispatch, httpclient, os, tables, options, strutils, json]
-import constants, content, questions, answers, errors, retry, wire, requestloop, syncclient, results_shim
+import constants, content, questions, answers, errors, retry, wire, requestloop, syncclient, results
 
 export content, questions, answers, errors, retry
 export syncclient.RequestOptions, syncclient.defaultRequestOptions
@@ -38,14 +38,14 @@ proc makeAsyncExecutor(client: AsyncHttpClient): AsyncRequestExecutor =
       var hdrs = initTable[string, string]()
       for k, v in resp.headers:
         hdrs[k.toLowerAscii] = v
-      ok[RawResponse, JevFailure](RawResponse(
+      ok(RawResponse(
         status: ord(resp.code), body: respBody, headers: hdrs,
       ))
     except CatchableError as e:
       if "timeout" in e.msg.toLowerAscii():
-        err[RawResponse, JevFailure](timeoutFailure(timeoutSec))
+        err(timeoutFailure(timeoutSec))
       else:
-        err[RawResponse, JevFailure](connectionFailure(e.msg))
+        err(connectionFailure(e.msg))
   execute
 
 proc newAsyncJevClient*(
@@ -63,9 +63,7 @@ proc newAsyncJevClient*(
       apiKey
     else:
       getEnv(ApiKeyEnv, "")
-  let keyResult = validateApiKey(rawKey)
-  if keyResult.isErr:
-    return err[AsyncJevClient, JevFailure](keyResult.error)
+  let key = ?validateApiKey(rawKey)
   let resolvedBase =
     if baseUrl.len > 0:
       baseUrl.strip()
@@ -78,12 +76,12 @@ proc newAsyncJevClient*(
       envOrDefault(DefaultModelEnv, DefaultModel)
 
   var client = AsyncJevClient(
-    apiKey: keyResult.unwrap(),
+    apiKey: key,
     baseUrl: resolvedBase,
     defaultModel: resolvedModel,
     timeoutSec: timeoutSec,
     retryPolicy: retryPolicy,
-    defaultHeaders: mergeHeaders(buildDefaultHeaders(keyResult.unwrap()), extraHeaders),
+    defaultHeaders: mergeHeaders(buildDefaultHeaders(key), extraHeaders),
     ownsHttpClient: httpClient.isNone,
   )
   if httpClient.isSome:
@@ -94,7 +92,7 @@ proc newAsyncJevClient*(
     client.executor = executor.get()
   else:
     client.executor = makeAsyncExecutor(client.httpClient)
-  ok[AsyncJevClient, JevFailure](client)
+  ok(client)
 
 proc newAsyncJevClientOrRaise*(
     apiKey = "";
@@ -106,11 +104,13 @@ proc newAsyncJevClientOrRaise*(
     executor: Option[AsyncRequestExecutor] = none(AsyncRequestExecutor),
     httpClient: Option[AsyncHttpClient] = none(AsyncHttpClient),
 ): AsyncJevClient =
-  newAsyncJevClient(
+  let created = newAsyncJevClient(
     apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders, executor,
     httpClient,
-  ).valueOr:
-    raiseFailure(failure)
+  )
+  if created.isErr:
+    raiseFailure(created.unsafeError)
+  created.get()
 
 proc close*(client: AsyncJevClient) =
   if client.isNil:
@@ -168,13 +168,10 @@ proc systemOne*(
 ): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
   let validated = validateQuestions(questions)
   if validated.isErr:
-    return err[SystemOneResponse, JevFailure](validationFailure(validated.error))
+    return err(validationFailure(validated.unsafeError))
   let (model, _, _, _) = resolveAsyncOptions(client, options)
   let payload = encodeSystemOneBody(state, model, questions)
-  let respResult = await sendAsyncRequest(client, "POST", SystemOnePath, $payload, options)
-  if respResult.isErr:
-    return err[SystemOneResponse, JevFailure](respResult.error)
-  let httpResp = respResult.unwrap()
+  let httpResp = ?(await sendAsyncRequest(client, "POST", SystemOnePath, $payload, options))
   decodeSystemOneResponse(httpResp.body, httpResp.headers)
 
 proc systemOne*(
@@ -191,8 +188,10 @@ proc systemOneOrRaise*(
     questions: Questions;
     options = defaultRequestOptions(),
 ): Future[SystemOneResponse] {.async.} =
-  (await systemOne(client, state, questions, options)).valueOr:
-    raiseFailure(failure)
+  let result = await systemOne(client, state, questions, options)
+  if result.isErr:
+    raiseFailure(result.unsafeError)
+  result.get()
 
 proc systemOneOrRaise*(
     client: AsyncJevClient;
@@ -205,14 +204,13 @@ proc systemOneOrRaise*(
 proc listModels*(
     client: AsyncJevClient; options = defaultRequestOptions(),
 ): Future[Result[ListModelsResponse, JevFailure]] {.async.} =
-  let respResult = await sendAsyncRequest(client, "GET", ModelsPath, "", options)
-  if respResult.isErr:
-    return err[ListModelsResponse, JevFailure](respResult.error)
-  let httpResp = respResult.unwrap()
+  let httpResp = ?(await sendAsyncRequest(client, "GET", ModelsPath, "", options))
   decodeListModelsResponse(httpResp.body, httpResp.headers)
 
 proc listModelsOrRaise*(
     client: AsyncJevClient; options = defaultRequestOptions(),
 ): Future[ListModelsResponse] {.async.} =
-  (await listModels(client, options)).valueOr:
-    raiseFailure(failure)
+  let result = await listModels(client, options)
+  if result.isErr:
+    raiseFailure(result.unsafeError)
+  result.get()

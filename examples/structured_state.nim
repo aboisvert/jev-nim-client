@@ -34,8 +34,8 @@ proc main() =
   var questions = initOrderedTable[string, Question]()
   questions["same_person"] = noul(instructions)
 
-  let result = client.systemOne(state, questions).unwrap()
-  let ans = result.noul("same_person").unwrap()
+  let result = client.systemOne(state, questions).get()
+  let ans = result.noul("same_person").get()
   echo &"same_person (probability yes): {ans.noul:.2f}"
 
 main()

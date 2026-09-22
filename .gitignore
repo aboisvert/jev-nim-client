@@ -7,6 +7,7 @@ nimcache/
 /nimbledocs/
 
 # Example binaries (nim c examples/foo.nim)
+/examples/async_quickstart
 /examples/quickstart
 /examples/system_one_batch
 /examples/list_models
