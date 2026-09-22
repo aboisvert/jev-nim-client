@@ -1,0 +1,10 @@
+# Nim compiler cache
+.nimcache/
+nimcache/
+
+# Build output
+/jev_nim_client
+/nimbledocs/
+
+# Nimble lock (optional — commit if you want reproducible deps)
+# nimble.lock
