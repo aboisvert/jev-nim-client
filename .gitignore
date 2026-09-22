@@ -18,3 +18,13 @@ nimcache/
 
 # Nimble lock (optional — commit if you want reproducible deps)
 # nimble.lock
+
+# Environment variables
+.env
+
+# Cursor IDE
+.cursor/
+
+# Binaries
+src/jev_nim_client.out
+tests/test_jev_client

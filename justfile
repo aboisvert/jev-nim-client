@@ -1,8 +1,10 @@
 # Load TYPESAFE_API_KEY (and other vars) from `.env` in the project root.
 set dotenv-load
 
-nim_src := "--path:src"
-nim_examples := "--path:src --path:examples"
+# HTTPS calls require OpenSSL (Nim's std/httpclient).
+nim_flags := "-d:ssl"
+nim_src := nim_flags + " --path:src"
+nim_examples := nim_flags + " --path:src --path:examples"
 
 # Example program basenames (without .nim)
 examples := "quickstart system_one_batch list_models structured_state async_system_one confidence_routing result_handling"

@@ -24,8 +24,12 @@ proc main() =
   dept["sales"] = "Pricing, upgrades, new accounts"
   questions["department"] = choice("Which team should handle this?", dept)
 
-  let result = client.systemOne(ExampleState, questions).unwrap()
-  let route = result.choice("department").unwrap()
+  let result = client.systemOne(ExampleState, questions).valueOr:
+    echo "systemOne failed: ", failure.message()
+    quit 1
+  let route = result.choice("department").valueOr:
+    echo "missing answer for department: ", failure
+    quit 1
 
   if route.confidence >= ConfidenceThreshold:
     echo &"AUTO-ROUTE → {route.choice} (confidence {route.confidence:.2f})"
