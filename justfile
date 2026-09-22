@@ -7,7 +7,7 @@ nim_src := nim_flags + " --path:src"
 nim_examples := nim_flags + " --path:src --path:examples"
 
 # Example program basenames (without .nim)
-examples := "quickstart system_one_batch list_models structured_state async_system_one confidence_routing result_handling"
+examples := "quickstart async_quickstart system_one_batch list_models structured_state async_system_one confidence_routing result_handling"
 
 default:
     @just --list
@@ -48,6 +48,9 @@ list-models:
 structured-state:
     just run structured_state
 
+async-quickstart:
+    just run async_quickstart
+
 async-system-one:
     just run async_system_one
 
@@ -58,6 +61,6 @@ result-handling:
     just run result_handling
 
 clean:
-    rm -f examples/quickstart examples/system_one_batch examples/list_models \
+    rm -f examples/quickstart examples/async_quickstart examples/system_one_batch examples/list_models \
       examples/structured_state examples/async_system_one examples/confidence_routing \
       examples/result_handling examples/support tests/test_jev_client

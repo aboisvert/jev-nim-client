@@ -3,6 +3,7 @@ import constants, content, questions, answers, errors, retry, wire, requestloop,
 
 export content, questions, answers, errors, retry
 export syncclient.RequestOptions, syncclient.defaultRequestOptions
+export requestloop.AsyncRequestExecutor
 
 type
   AsyncJevClient* = ref object
@@ -13,17 +14,13 @@ type
     retryPolicy: RetryPolicy
     defaultHeaders: Table[string, string]
     httpClient: AsyncHttpClient
-    executor: RequestExecutor
+    executor: AsyncRequestExecutor
     ownsHttpClient: bool # see syncclient.JevClient.ownsHttpClient
 
-proc asyncSleep(seconds: float) =
-  waitFor sleepAsync(int(seconds * 1000.0))
-
-proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
-  # waitFor runs the async HTTP stack but still exposes the sync RequestExecutor shape.
+proc makeAsyncExecutor(client: AsyncHttpClient): AsyncRequestExecutor =
   proc execute(
       verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
-  ): Result[RawResponse, JevFailure] {.gcsafe.} =
+  ): Future[Result[RawResponse, JevFailure]] {.async.} =
     client.timeout = int(timeoutSec * 1000.0)
     try:
       var reqHeaders = newHttpHeaders()
@@ -36,8 +33,8 @@ proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
           HttpPost
         else:
           HttpPost
-      let resp = waitFor client.request(url, httpMethod, body, reqHeaders)
-      let respBody = waitFor resp.body # body is a Future; must be awaited separately
+      let resp = await client.request(url, httpMethod, body, reqHeaders)
+      let respBody = await resp.body
       var hdrs = initTable[string, string]()
       for k, v in resp.headers:
         hdrs[k.toLowerAscii] = v
@@ -45,7 +42,6 @@ proc makeAsyncExecutor(client: AsyncHttpClient): RequestExecutor =
         status: ord(resp.code), body: respBody, headers: hdrs,
       ))
     except CatchableError as e:
-      # Same timeout detection as syncclient.makeSyncExecutor (no typed timeout error).
       if "timeout" in e.msg.toLowerAscii():
         err[RawResponse, JevFailure](timeoutFailure(timeoutSec))
       else:
@@ -59,7 +55,7 @@ proc newAsyncJevClient*(
     timeoutSec = DefaultTimeoutSec;
     retryPolicy = defaultRetryPolicy();
     extraHeaders = initTable[string, string]();
-    executor: Option[RequestExecutor] = none(RequestExecutor),
+    executor: Option[AsyncRequestExecutor] = none(AsyncRequestExecutor),
     httpClient: Option[AsyncHttpClient] = none(AsyncHttpClient),
 ): Result[AsyncJevClient, JevFailure] =
   let rawKey =
@@ -107,7 +103,7 @@ proc newAsyncJevClientOrRaise*(
     timeoutSec = DefaultTimeoutSec;
     retryPolicy = defaultRetryPolicy();
     extraHeaders = initTable[string, string]();
-    executor: Option[RequestExecutor] = none(RequestExecutor),
+    executor: Option[AsyncRequestExecutor] = none(AsyncRequestExecutor),
     httpClient: Option[AsyncHttpClient] = none(AsyncHttpClient),
 ): AsyncJevClient =
   newAsyncJevClient(
@@ -148,15 +144,14 @@ proc sendAsyncRequest(
     verb, path: string;
     body: string;
     options: RequestOptions,
-): Result[RawResponse, JevFailure] =
+): Future[Result[RawResponse, JevFailure]] {.async.} =
   let (model, timeout, retry, headers) = resolveAsyncOptions(client, options)
   discard model
   let url = joinUrl(client.baseUrl, path)
   let endpoint = verb & " " & url
-  executeWithRetry(
+  await executeWithRetryAsync(
     retry,
     client.executor,
-    asyncSleep,
     verb,
     url,
     body,
@@ -170,13 +165,13 @@ proc systemOne*(
     state: JsonContent;
     questions: Questions;
     options = defaultRequestOptions(),
-): Result[SystemOneResponse, JevFailure] =
+): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
   let validated = validateQuestions(questions)
   if validated.isErr:
     return err[SystemOneResponse, JevFailure](validationFailure(validated.error))
   let (model, _, _, _) = resolveAsyncOptions(client, options)
   let payload = encodeSystemOneBody(state, model, questions)
-  let respResult = sendAsyncRequest(client, "POST", SystemOnePath, $payload, options)
+  let respResult = await sendAsyncRequest(client, "POST", SystemOnePath, $payload, options)
   if respResult.isErr:
     return err[SystemOneResponse, JevFailure](respResult.error)
   let httpResp = respResult.unwrap()
@@ -187,16 +182,16 @@ proc systemOne*(
     state: string;
     questions: Questions;
     options = defaultRequestOptions(),
-): Result[SystemOneResponse, JevFailure] =
-  systemOne(client, content(state), questions, options)
+): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
+  await systemOne(client, content(state), questions, options)
 
 proc systemOneOrRaise*(
     client: AsyncJevClient;
     state: JsonContent;
     questions: Questions;
     options = defaultRequestOptions(),
-): SystemOneResponse =
-  systemOne(client, state, questions, options).valueOr:
+): Future[SystemOneResponse] {.async.} =
+  (await systemOne(client, state, questions, options)).valueOr:
     raiseFailure(failure)
 
 proc systemOneOrRaise*(
@@ -204,13 +199,13 @@ proc systemOneOrRaise*(
     state: string;
     questions: Questions;
     options = defaultRequestOptions(),
-): SystemOneResponse =
-  systemOneOrRaise(client, content(state), questions, options)
+): Future[SystemOneResponse] {.async.} =
+  await systemOneOrRaise(client, content(state), questions, options)
 
 proc listModels*(
     client: AsyncJevClient; options = defaultRequestOptions(),
-): Result[ListModelsResponse, JevFailure] =
-  let respResult = sendAsyncRequest(client, "GET", ModelsPath, "", options)
+): Future[Result[ListModelsResponse, JevFailure]] {.async.} =
+  let respResult = await sendAsyncRequest(client, "GET", ModelsPath, "", options)
   if respResult.isErr:
     return err[ListModelsResponse, JevFailure](respResult.error)
   let httpResp = respResult.unwrap()
@@ -218,6 +213,6 @@ proc listModels*(
 
 proc listModelsOrRaise*(
     client: AsyncJevClient; options = defaultRequestOptions(),
-): ListModelsResponse =
-  listModels(client, options).valueOr:
+): Future[ListModelsResponse] {.async.} =
+  (await listModels(client, options)).valueOr:
     raiseFailure(failure)

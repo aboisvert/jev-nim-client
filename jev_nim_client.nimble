@@ -23,6 +23,7 @@ task examples, "Compile example programs":
   exec "nim c " & nimFlags & " --path:src --path:examples examples/system_one_batch.nim"
   exec "nim c " & nimFlags & " --path:src --path:examples examples/list_models.nim"
   exec "nim c " & nimFlags & " --path:src --path:examples examples/structured_state.nim"
+  exec "nim c " & nimFlags & " --path:src --path:examples examples/async_quickstart.nim"
   exec "nim c " & nimFlags & " --path:src --path:examples examples/async_system_one.nim"
   exec "nim c " & nimFlags & " --path:src --path:examples examples/confidence_routing.nim"
   exec "nim c " & nimFlags & " --path:src --path:examples examples/result_handling.nim"

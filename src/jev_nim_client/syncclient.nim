@@ -2,6 +2,7 @@ import std/[httpclient, os, tables, options, strutils, json]
 import constants, content, questions, answers, errors, retry, wire, requestloop, results_shim
 
 export content, questions, answers, errors, retry, results_shim
+export requestloop.SyncRequestExecutor
 
 type
   RequestOptions* = object
@@ -18,7 +19,7 @@ type
     retryPolicy: RetryPolicy
     defaultHeaders: Table[string, string]
     httpClient: HttpClient
-    executor: RequestExecutor
+    executor: SyncRequestExecutor
     # False when caller passed httpClient; close() must not destroy a shared instance.
     ownsHttpClient: bool
 
@@ -37,8 +38,7 @@ proc buildDefaultHeaders*(apiKey: string): Table[string, string] =
   result["content-type"] = "application/json"
   result["user-agent"] = UserAgentPrefix & "/" & ClientVersion
 
-proc makeSyncExecutor(client: HttpClient): RequestExecutor =
-  # Closure returned as RequestExecutor so executeWithRetry can stay client-agnostic.
+proc makeSyncExecutor(client: HttpClient): SyncRequestExecutor =
   proc execute(
       verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
   ): Result[RawResponse, JevFailure] {.gcsafe.} =
@@ -87,7 +87,7 @@ proc newJevClient*(
     timeoutSec = DefaultTimeoutSec;
     retryPolicy = defaultRetryPolicy();
     extraHeaders = initTable[string, string]();
-    executor: Option[RequestExecutor] = none(RequestExecutor),
+    executor: Option[SyncRequestExecutor] = none(SyncRequestExecutor),
     httpClient: Option[HttpClient] = none(HttpClient),
 ): Result[JevClient, JevFailure] =
   let rawKey =
@@ -135,7 +135,7 @@ proc newJevClientOrRaise*(
     timeoutSec = DefaultTimeoutSec;
     retryPolicy = defaultRetryPolicy();
     extraHeaders = initTable[string, string]();
-    executor: Option[RequestExecutor] = none(RequestExecutor),
+    executor: Option[SyncRequestExecutor] = none(SyncRequestExecutor),
     httpClient: Option[HttpClient] = none(HttpClient),
 ): JevClient =
   newJevClient(

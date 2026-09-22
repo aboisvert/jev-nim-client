@@ -14,7 +14,7 @@ proc main() {.async.} =
     client.close()
 
   let questions = billingFanOutQuestions()
-  let result = client.systemOne(ExampleState, questions).unwrap()
+  let result = (await client.systemOne(ExampleState, questions)).unwrap()
   echo "model: ", result.model
   let dept = result.choice("department").unwrap().choice
   echo &"department: {dept}"

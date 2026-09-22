@@ -1,4 +1,4 @@
-import std/[unittest, tables, json, options, strutils]
+import std/[asyncdispatch, unittest, tables, json, options, strutils]
 import jev_nim_client
 import jev_nim_client/wire
 import jev_nim_client/retry
@@ -71,7 +71,7 @@ proc flakySyncTransport(
 
 proc fakeAsyncTransport(
     verb, url, body: string; headers: Table[string, string]; timeoutSec: float,
-): Result[RawResponse, JevFailure] {.gcsafe.} =
+): Future[Result[RawResponse, JevFailure]] {.async.} =
   inc asyncTransportCalls
   ok[RawResponse, JevFailure](RawResponse(
     status: 200, body: sampleSystemOneResponse, headers: initTable[string, string](),
@@ -147,7 +147,7 @@ test "sync client uses fake transport":
   let client = newJevClient(
     apiKey = "ts_test_key_1234567890",
     baseUrl = "https://example.test",
-    executor = some RequestExecutor(fakeSyncTransport),
+    executor = some SyncRequestExecutor(fakeSyncTransport),
   ).unwrap()
   defer:
     client.close()
@@ -170,7 +170,7 @@ test "sync client retries 429 then succeeds":
     apiKey = "ts_test_key_1234567890",
     baseUrl = "https://example.test",
     retryPolicy = policy,
-    executor = some RequestExecutor(flakySyncTransport),
+    executor = some SyncRequestExecutor(flakySyncTransport),
   ).unwrap()
   defer:
     client.close()
@@ -184,13 +184,13 @@ test "async client uses fake transport":
   let client = newAsyncJevClient(
     apiKey = "ts_test_key_1234567890",
     baseUrl = "https://example.test",
-    executor = some RequestExecutor(fakeAsyncTransport),
+    executor = some AsyncRequestExecutor(fakeAsyncTransport),
   ).unwrap()
   defer:
     client.close()
   var questions = initOrderedTable[string, Question]()
   questions["is_urgent"] = noul("Does this convey urgency?")
-  let result = client.systemOne("Help!", questions).unwrap()
+  let result = waitFor(client.systemOne("Help!", questions)).unwrap()
   check asyncTransportCalls == 1
   check result.noul("is_urgent").unwrap().noul == 0.95
 

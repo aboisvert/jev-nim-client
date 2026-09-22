@@ -11,7 +11,19 @@
 ##      initOrderedTable({"is_urgent": noul("Does this convey urgency?")}),
 ##    ).unwrap()
 ##
-## Async usage: ``import jev_nim_client/asyncclient``
+## Async usage (``AsyncJevClient`` methods are ``{.async.}`` — ``await`` inside an async proc,
+## or ``waitFor`` from sync code):
+##
+## .. code-block:: nim
+##    import std/asyncdispatch
+##    import jev_nim_client
+##    proc main() {.async.} =
+##      let client = newAsyncJevClient().unwrap()
+##      defer: client.close()
+##      let result = (await client.systemOne("Help!", questions)).unwrap()
+##    waitFor main()
+##
+## Runnable async examples: ``examples/async_quickstart.nim``, ``examples/async_system_one.nim``.
 
 import jev_nim_client/syncclient
 import jev_nim_client/asyncclient
