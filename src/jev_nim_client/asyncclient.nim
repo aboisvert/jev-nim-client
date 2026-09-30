@@ -141,7 +141,7 @@ proc sendAsyncRequest(
   discard model
   let url = joinUrl(client.baseUrl, path)
   let endpoint = verb & " " & url
-  await executeWithRetryAsync(
+  return await executeWithRetryAsync(
     retry,
     client.executor,
     verb,
@@ -159,11 +159,19 @@ proc systemOne*(
     options = defaultRequestOptions(),
 ): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
   let (model, _, _, _) = resolveAsyncOptions(client, options)
-  let payload = ?encodeSystemOneBody(
+  let payloadResult = encodeSystemOneBody(
     client.provider, state, model, questions, options.keepAlive,
   )
-  let httpResp = ?(await sendAsyncRequest(client, "POST", SystemOnePath, $payload, options))
-  decodeSystemOneResponse(httpResp.body, httpResp.headers)
+  if payloadResult.isErr:
+    return err(payloadResult.unsafeError)
+  let payload = payloadResult.get()
+  let httpResult = await sendAsyncRequest(
+    client, "POST", SystemOnePath, $payload, options,
+  )
+  if httpResult.isErr:
+    return err(httpResult.unsafeError)
+  let httpResp = httpResult.get()
+  return decodeSystemOneResponse(httpResp.body, httpResp.headers)
 
 proc systemOne*(
     client: AsyncJevClient;
@@ -171,7 +179,7 @@ proc systemOne*(
     questions: Questions;
     options = defaultRequestOptions(),
 ): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
-  await systemOne(client, content(state), questions, options)
+  return await systemOne(client, content(state), questions, options)
 
 proc systemOneOrRaise*(
     client: AsyncJevClient;
@@ -196,8 +204,11 @@ proc listModels*(
     client: AsyncJevClient; options = defaultRequestOptions(),
 ): Future[Result[ListModelsResponse, JevFailure]] {.async.} =
   let path = listModelsPath(client.provider)
-  let httpResp = ?(await sendAsyncRequest(client, "GET", path, "", options))
-  decodeListModelsResponse(client.provider, httpResp.body, httpResp.headers)
+  let httpResult = await sendAsyncRequest(client, "GET", path, "", options)
+  if httpResult.isErr:
+    return err(httpResult.unsafeError)
+  let httpResp = httpResult.get()
+  return decodeListModelsResponse(client.provider, httpResp.body, httpResp.headers)
 
 proc listModelsOrRaise*(
     client: AsyncJevClient; options = defaultRequestOptions(),
