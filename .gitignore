@@ -1,6 +1,7 @@
 # Nim compiler cache
 .nimcache/
 nimcache/
+/deps/
 
 # Build output
 /jev_nim_client
