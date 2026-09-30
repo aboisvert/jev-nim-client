@@ -7,15 +7,12 @@ nimcache/
 /nimbledocs/
 
 # Example binaries (nim c examples/foo.nim)
-/examples/async_quickstart
-/examples/quickstart
-/examples/system_one_batch
-/examples/list_models
-/examples/structured_state
-/examples/async_system_one
-/examples/confidence_routing
-/examples/result_handling
-/examples/support
+/examples/**/*
+!examples/**/*.nim
+
+# Example binaries (nim c examples/foo.nim)
+/tests/**/*
+!tests/**/*.nim
 
 # Nimble lock (optional — commit if you want reproducible deps)
 # nimble.lock
@@ -25,7 +22,7 @@ nimcache/
 
 # Cursor IDE
 .cursor/
+.vscode/
 
 # Binaries
 src/jev_nim_client.out
-tests/test_jev_client

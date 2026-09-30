@@ -1,7 +1,7 @@
-import std/[httpclient, os, tables, options, strutils, json]
-import constants, content, questions, answers, errors, retry, wire, requestloop, results
+import std/[httpclient, tables, options, strutils, json]
+import constants, content, questions, answers, errors, retry, wire, requestloop, provider, results
 
-export content, questions, answers, errors, retry, results
+export content, questions, answers, errors, retry, results, provider
 export requestloop.SyncRequestExecutor
 
 type
@@ -10,8 +10,10 @@ type
     timeoutSec*: Option[float]
     retry*: Option[RetryPolicy]
     extraHeaders*: Table[string, string]
+    keepAlive*: Option[KeepAlive]
 
   JevClient* = ref object
+    provider: ProviderProfile
     apiKey: string
     baseUrl: string
     defaultModel: string
@@ -29,11 +31,15 @@ proc defaultRequestOptions*(): RequestOptions =
     timeoutSec: none(float),
     retry: none(RetryPolicy),
     extraHeaders: initTable[string, string](),
+    keepAlive: none(KeepAlive),
   )
 
-proc buildDefaultHeaders*(apiKey: string): Table[string, string] =
+proc buildDefaultHeaders*(
+    profile: ProviderProfile; apiKey: string,
+): Table[string, string] =
   result = initTable[string, string]()
-  result["authorization"] = "Bearer " & apiKey
+  if profile.kind == typesafeAi or apiKey.len > 0:
+    result["authorization"] = "Bearer " & apiKey
   result["accept"] = "application/json"
   result["content-type"] = "application/json"
   result["user-agent"] = UserAgentPrefix & "/" & ClientVersion
@@ -81,6 +87,7 @@ proc joinUrl*(baseUrl, path: string): string =
     base & "/" & path
 
 proc newJevClient*(
+    provider = typesafeAi;
     apiKey = "";
     baseUrl = "";
     defaultModel = "";
@@ -90,30 +97,19 @@ proc newJevClient*(
     executor: Option[SyncRequestExecutor] = none(SyncRequestExecutor),
     httpClient: Option[HttpClient] = none(HttpClient),
 ): Result[JevClient, JevFailure] =
-  let rawKey =
-    if apiKey.len > 0:
-      apiKey
-    else:
-      getEnv(ApiKeyEnv, "") # empty arg means "read TYPESAFE_API_KEY"
-  let key = ?validateApiKey(rawKey)
-  let resolvedBase =
-    if baseUrl.len > 0:
-      baseUrl.strip()
-    else:
-      envOrDefault(BaseUrlEnv, DefaultBaseUrl)
-  let resolvedModel =
-    if defaultModel.len > 0:
-      defaultModel.strip()
-    else:
-      envOrDefault(DefaultModelEnv, DefaultModel)
+  let prof = profile(provider)
+  let (key, resolvedBase, resolvedModel) = ?resolveClientConfig(
+    provider, apiKey, baseUrl, defaultModel,
+  )
 
   var client = JevClient(
+    provider: prof,
     apiKey: key,
     baseUrl: resolvedBase,
     defaultModel: resolvedModel,
     timeoutSec: timeoutSec,
     retryPolicy: retryPolicy,
-    defaultHeaders: mergeHeaders(buildDefaultHeaders(key), extraHeaders),
+    defaultHeaders: mergeHeaders(buildDefaultHeaders(prof, key), extraHeaders),
     ownsHttpClient: httpClient.isNone,
   )
   if httpClient.isSome:
@@ -127,6 +123,7 @@ proc newJevClient*(
   ok(client)
 
 proc newJevClientOrRaise*(
+    provider = typesafeAi;
     apiKey = "";
     baseUrl = "";
     defaultModel = "";
@@ -137,8 +134,8 @@ proc newJevClientOrRaise*(
     httpClient: Option[HttpClient] = none(HttpClient),
 ): JevClient =
   newJevClient(
-    apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders, executor,
-    httpClient,
+    provider, apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders,
+    executor, httpClient,
   ).valueOr:
     raiseFailure(error)
 
@@ -198,12 +195,11 @@ proc systemOne*(
     questions: Questions;
     options = defaultRequestOptions(),
 ): Result[SystemOneResponse, JevFailure] =
-  let validated = validateQuestions(questions)
-  if validated.isErr:
-    return err(validationFailure(validated.unsafeError))
   # Model comes from options here; sendRequest only handles HTTP + retry.
   let (model, _, _, _) = resolveOptions(client, options)
-  let payload = encodeSystemOneBody(state, model, questions)
+  let payload = ?encodeSystemOneBody(
+    client.provider, state, model, questions, options.keepAlive,
+  )
   let httpResp = ?sendRequest(client, "POST", SystemOnePath, $payload, options)
   decodeSystemOneResponse(httpResp.body, httpResp.headers)
 
@@ -235,8 +231,9 @@ proc systemOneOrRaise*(
 proc listModels*(
     client: JevClient; options = defaultRequestOptions(),
 ): Result[ListModelsResponse, JevFailure] =
-  let httpResp = ?sendRequest(client, "GET", ModelsPath, "", options)
-  decodeListModelsResponse(httpResp.body, httpResp.headers)
+  let path = listModelsPath(client.provider)
+  let httpResp = ?sendRequest(client, "GET", path, "", options)
+  decodeListModelsResponse(client.provider, httpResp.body, httpResp.headers)
 
 proc listModelsOrRaise*(
     client: JevClient; options = defaultRequestOptions(),

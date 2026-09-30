@@ -1,5 +1,5 @@
 import std/[json, tables, options, strutils]
-import content, questions, answers, errors, constants, results
+import content, questions, answers, errors, constants, provider, results
 
 proc encodeJsonValue*(v: JsonValue): JsonNode =
   case v.valueKind
@@ -39,15 +39,28 @@ proc encodeState*(state: JsonContent): JsonNode =
 proc encodeState*(state: string): JsonNode =
   newJString(state)
 
-proc encodeNoulCriteria*(c: NoulCriteria): JsonNode =
+proc encodeJsonContentForCriteria*(
+    limits: ProviderLimits; c: JsonContent,
+): JsonNode =
+  if limits.stringCriteriaOnly:
+    if c.contentKind != jckString:
+      raise ValueError.newException("criteria must be strings for this provider")
+    newJString(c.text)
+  else:
+    encodeJsonContent(c)
+
+proc encodeNoulCriteria*(
+    limits: ProviderLimits; c: NoulCriteria,
+): JsonNode =
   var obj = newJObject()
   if c.trueDesc.isSome:
-    obj["true"] = encodeJsonContent(c.trueDesc.get())
+    obj["true"] = encodeJsonContentForCriteria(limits, c.trueDesc.get())
   if c.falseDesc.isSome:
-    obj["false"] = encodeJsonContent(c.falseDesc.get())
+    obj["false"] = encodeJsonContentForCriteria(limits, c.falseDesc.get())
   obj
 
-proc encodeQuestion*(q: Question): JsonNode =
+proc encodeQuestion*(profile: ProviderProfile; q: Question): JsonNode =
+  let limits = profile.limits()
   var obj = newJObject()
   case q.questionKind
   of qkNoul:
@@ -56,7 +69,7 @@ proc encodeQuestion*(q: Question): JsonNode =
     if n.instructions.isSome:
       obj["instructions"] = encodeJsonContent(n.instructions.get())
     if n.criteria.isSome:
-      obj["criteria"] = encodeNoulCriteria(n.criteria.get())
+      obj["criteria"] = encodeNoulCriteria(limits, n.criteria.get())
   of qkChoice:
     obj["type"] = newJString("choice")
     let ch = q.choice
@@ -65,7 +78,7 @@ proc encodeQuestion*(q: Question): JsonNode =
     var crit = newJObject()
     for k, v in ch.criteria:
       if v.isSome:
-        crit[k] = encodeJsonContent(v.get())
+        crit[k] = encodeJsonContentForCriteria(limits, v.get())
       else:
         crit[k] = newJNull() # option listed without description; API still expects the key
     obj["criteria"] = crit
@@ -76,31 +89,138 @@ proc encodeQuestion*(q: Question): JsonNode =
       obj["instructions"] = encodeJsonContent(sc.instructions.get())
     var levels = newJArray()
     for level in sc.criteria:
-      levels.add encodeJsonContent(level)
+      levels.add encodeJsonContentForCriteria(limits, level)
     obj["criteria"] = levels
   obj
 
-proc encodeSystemOneBody*(
-    state: JsonContent; model: string; questions: Questions,
-): JsonNode =
-  var qObj = newJObject()
+proc validateInstructions*(
+    limits: ProviderLimits; id: string; instructions: Option[JsonContent],
+): Result[void, string] =
+  if not limits.requiresNonemptyInstructions:
+    return ok()
+  if instructions.isNone:
+    return err("question '" & id & "' must include instructions")
+  let instr = instructions.get()
+  if instr.contentKind == jckString and instr.text.strip.len == 0:
+    return err("question '" & id & "' instructions must not be blank")
+  ok()
+
+proc validateOllamaCriteria*(
+    limits: ProviderLimits; id: string; c: JsonContent; field: string,
+): Result[void, string] =
+  if not limits.stringCriteriaOnly:
+    return ok()
+  if c.contentKind != jckString:
+    return err("question '" & id & "' " & field & " criteria must be strings for Ollama")
+  ok()
+
+proc validateQuestionCriteria*(
+    profile: ProviderProfile; id: string; q: Question,
+): Result[void, string] =
+  let limits = profile.limits()
+  case q.questionKind
+  of qkNoul:
+    ?validateInstructions(limits, id, q.noul.instructions)
+    if q.noul.criteria.isSome:
+      let c = q.noul.criteria.get
+      if c.trueDesc.isSome:
+        ?validateOllamaCriteria(limits, id, c.trueDesc.get, "noul true")
+      if c.falseDesc.isSome:
+        ?validateOllamaCriteria(limits, id, c.falseDesc.get, "noul false")
+  of qkChoice:
+    ?validateInstructions(limits, id, q.choice.instructions)
+    for _, desc in q.choice.criteria:
+      if desc.isSome:
+        ?validateOllamaCriteria(limits, id, desc.get, "choice")
+  of qkScore:
+    ?validateInstructions(limits, id, q.score.instructions)
+    for level in q.score.criteria:
+      ?validateOllamaCriteria(limits, id, level, "score")
+  ok()
+
+proc validateState*(
+    profile: ProviderProfile; state: JsonContent,
+): Result[void, string] =
+  let limits = profile.limits()
+  if limits.requiresNonemptyStringState:
+    if state.contentKind == jckString and state.text.strip.len == 0:
+      return err("state must be nonempty")
+  ok()
+
+proc validateQuestions*(
+    profile: ProviderProfile; questions: Questions,
+): Result[void, string] =
+  let limits = profile.limits()
+  if questions.len == 0:
+    return err("questions must not be empty")
+  if questions.len > limits.maxQuestions:
+    return err("too many questions (max " & $limits.maxQuestions & ")")
   for id, q in questions:
-    qObj[id] = encodeQuestion(q)
-  result = newJObject()
-  result["state"] = encodeState(state)
-  result["model"] = newJString(model)
-  result["questions"] = qObj
+    if id.strip.len == 0:
+      return err("question id must not be blank")
+    case q.questionKind
+    of qkChoice:
+      let n = q.choice.criteria.len
+      if n < limits.minChoiceOptions:
+        return err("choice question '" & id & "' must have at least " &
+          $limits.minChoiceOptions & " options")
+      if n > limits.maxChoiceOptions:
+        return err("choice question '" & id & "' exceeds " & $limits.maxChoiceOptions &
+          " options")
+    of qkScore:
+      let n = q.score.criteria.len
+      if n < limits.minScoreLevels:
+        return err("score question '" & id & "' must have at least " &
+          $limits.minScoreLevels & " levels")
+      if n > limits.maxScoreLevels:
+        return err("score question '" & id & "' exceeds " & $limits.maxScoreLevels & " levels")
+    of qkNoul:
+      discard
+    ?validateQuestionCriteria(profile, id, q)
+  ok()
 
 proc encodeSystemOneBody*(
-    state: string; model: string; questions: Questions,
-): JsonNode =
+    profile: ProviderProfile;
+    state: JsonContent;
+    model: string;
+    questions: Questions;
+    keepAlive: Option[KeepAlive] = none(KeepAlive),
+): Result[JsonNode, JevFailure] =
+  let stateValid = validateState(profile, state)
+  if stateValid.isErr:
+    return err(validationFailure(stateValid.unsafeError))
+  let qValid = validateQuestions(profile, questions)
+  if qValid.isErr:
+    return err(validationFailure(qValid.unsafeError))
+  if keepAlive.isSome and not profile.limits().supportsKeepAlive:
+    return err(validationFailure("keep_alive is only supported for Ollama"))
   var qObj = newJObject()
   for id, q in questions:
-    qObj[id] = encodeQuestion(q)
-  result = newJObject()
-  result["state"] = encodeState(state)
-  result["model"] = newJString(model)
-  result["questions"] = qObj
+    qObj[id] = encodeQuestion(profile, q)
+  var bodyNode = newJObject()
+  bodyNode["state"] = encodeState(state)
+  bodyNode["model"] = newJString(model)
+  bodyNode["questions"] = qObj
+  if keepAlive.isSome:
+    let ka = keepAlive.get()
+    case ka.kind
+    of kakDuration:
+      bodyNode["keep_alive"] = newJString(ka.duration)
+    of kakSeconds:
+      bodyNode["keep_alive"] = newJFloat(ka.seconds)
+  let maxBytes = profile.limits().maxBodyBytes
+  if maxBytes > 0 and ($bodyNode).len > maxBytes:
+    return err(validationFailure("request body exceeds " & $maxBytes & " bytes"))
+  ok(bodyNode)
+
+proc encodeSystemOneBody*(
+    profile: ProviderProfile;
+    state: string;
+    model: string;
+    questions: Questions;
+    keepAlive: Option[KeepAlive] = none(KeepAlive),
+): Result[JsonNode, JevFailure] =
+  encodeSystemOneBody(profile, content(state), model, questions, keepAlive)
 
 proc decodeJsonValue*(node: JsonNode): Result[JsonValue, string] =
   case node.kind
@@ -256,7 +376,9 @@ proc decodeSystemOneResponse*(
   ok(resp)
 
 proc decodeListModelsResponse*(
-    body: string; headers: Table[string, string],
+    profile: ProviderProfile;
+    body: string;
+    headers: Table[string, string],
 ): Result[ListModelsResponse, JevFailure] =
   let node =
     try:
@@ -276,13 +398,23 @@ proc decodeListModelsResponse*(
   for item in arr:
     if item.kind != JObject:
       return err(responseFailure("models[" & $i & "]", "model entry must be an object"))
-    if "name" notin item or "description" notin item or "release_date" notin item:
-      return err(responseFailure("models[" & $i & "]", "missing model metadata fields"))
-    models.add ModelMetadata(
-      name: item["name"].getStr(),
-      description: item["description"].getStr(),
-      releaseDate: item["release_date"].getStr(),
-    )
+    if "name" notin item:
+      return err(responseFailure("models[" & $i & "]", "missing model name"))
+    case profile.kind
+    of typesafeAi:
+      if "description" notin item or "release_date" notin item:
+        return err(responseFailure("models[" & $i & "]", "missing model metadata fields"))
+      models.add ModelMetadata(
+        name: item["name"].getStr(),
+        description: item["description"].getStr(),
+        releaseDate: item["release_date"].getStr(),
+      )
+    of ollama:
+      models.add ModelMetadata(
+        name: item["name"].getStr(),
+        description: "",
+        releaseDate: "",
+      )
     inc i
   ok(ListModelsResponse(
     models: models, requestId: requestIdFromHeaders(headers),

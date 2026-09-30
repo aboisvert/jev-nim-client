@@ -8,6 +8,7 @@ Features:
 - **`Result[T, JevFailure]`** by default, plus `*OrRaise` helpers that map failures to typed exceptions
 - Question types: **noul** (continuous yes/no), **choice**, and **score**
 - Retries, timeouts, and per-request options
+- **TypeSafe** or **Ollama** providers (`typesafeAi` / `ollama`) with shared question types
 - Defaults aligned with the official TypeSafe SDKs (env vars, base URL, models)
 
 ## Requirements
@@ -31,13 +32,27 @@ nim c -d:ssl --path:src your_app.nim
 
 ## Configuration
 
+Pass `provider = typesafeAi` (default) or `provider = ollama` to `newJevClient` / `newAsyncJevClient`, along with optional `apiKey`, `baseUrl`, and `defaultModel`. Empty arguments fall back to the env vars for that provider.
+
+### TypeSafe (default)
+
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `TYPESAFE_API_KEY` | API key (`ts_...`) | *(required)* |
 | `TYPESAFE_BASE_URL` | API base URL | `https://api.typesafe.ai` |
 | `TYPESAFE_DEFAULT_MODEL` | Model for `systemOne` | `jev-latest` |
 
-You can also pass `apiKey`, `baseUrl`, and `defaultModel` to `newJevClient` / `newAsyncJevClient`.
+### Ollama (local System One)
+
+Requires [Ollama](https://ollama.com) **v0.35.0+** and a System One model (for example `ollama pull nimble`). See the [Ollama decision guide](https://docs.ollama.com/capabilities/decision).
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `OLLAMA_HOST` | Ollama base URL | `http://127.0.0.1:11434` |
+| `OLLAMA_DEFAULT_MODEL` | Model for `systemOne` | `nimble` |
+| `OLLAMA_API_KEY` | Optional bearer token | *(unset)* |
+
+Ollama enforces stricter request limits (for example 64 KiB body size, up to 64 questions, choice/score criteria as strings). Use `RequestOptions.keepAlive` with `keepAliveDuration("5m")` or `keepAliveSeconds(...)` to control model load time after a request.
 
 ## Quick start (sync)
 
@@ -57,6 +72,25 @@ proc main() =
 
   echo result.model
   echo result.noul("billing").get().noul  # 0.0–1.0
+
+main()
+```
+
+### Quick start (Ollama)
+
+```nim
+import std/tables
+import jev_nim_client
+
+proc main() =
+  let client = newJevClient(provider = ollama).get()
+  defer: client.close()
+
+  var questions = initOrderedTable[string, Question]()
+  questions["billing"] = noul("Is this about billing?")
+
+  let result = client.systemOne("Help! My payouts have been failing.", questions).get()
+  echo result.noul("billing").get().noul
 
 main()
 ```
@@ -147,10 +181,21 @@ Shared example helpers live in `examples/support.nim` (not part of the library).
 
 ## Development
 
+Unit tests are split by module under `tests/` (for example `test_wire.nim`, `test_retry.nim`, `test_sync_client.nim`). Shared fixtures live in `tests/support.nim`; fake HTTP transports are in `tests/fake_transports.nim`.
+
+Live end-to-end tests (`test_e2e_typesafe.nim`, `test_e2e_ollama.nim`) are opt-in: they skip unless `JEV_RUN_E2E=1`. TypeSafe needs `TYPESAFE_API_KEY`; Ollama needs a running server and the `nimble` model (`ollama pull nimble`).
+
 ```bash
 just test
 just build
 just clean
+
+# Live providers (network required)
+export TYPESAFE_API_KEY=ts_...
+just e2e                  # both providers
+just e2e-typesafe         # TypeSafe only
+just e2e-ollama           # local Ollama only
+# or: nimble e2e
 ```
 
 ## License

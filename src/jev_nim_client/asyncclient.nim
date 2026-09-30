@@ -1,4 +1,4 @@
-import std/[asyncdispatch, httpclient, os, tables, options, strutils, json]
+import std/[asyncdispatch, httpclient, tables, options, strutils, json]
 import constants, content, questions, answers, errors, retry, wire, requestloop, syncclient, results
 
 export content, questions, answers, errors, retry
@@ -7,6 +7,7 @@ export requestloop.AsyncRequestExecutor
 
 type
   AsyncJevClient* = ref object
+    provider: ProviderProfile
     apiKey: string
     baseUrl: string
     defaultModel: string
@@ -49,6 +50,7 @@ proc makeAsyncExecutor(client: AsyncHttpClient): AsyncRequestExecutor =
   execute
 
 proc newAsyncJevClient*(
+    provider = typesafeAi;
     apiKey = "";
     baseUrl = "";
     defaultModel = "";
@@ -58,30 +60,19 @@ proc newAsyncJevClient*(
     executor: Option[AsyncRequestExecutor] = none(AsyncRequestExecutor),
     httpClient: Option[AsyncHttpClient] = none(AsyncHttpClient),
 ): Result[AsyncJevClient, JevFailure] =
-  let rawKey =
-    if apiKey.len > 0:
-      apiKey
-    else:
-      getEnv(ApiKeyEnv, "")
-  let key = ?validateApiKey(rawKey)
-  let resolvedBase =
-    if baseUrl.len > 0:
-      baseUrl.strip()
-    else:
-      envOrDefault(BaseUrlEnv, DefaultBaseUrl)
-  let resolvedModel =
-    if defaultModel.len > 0:
-      defaultModel.strip()
-    else:
-      envOrDefault(DefaultModelEnv, DefaultModel)
+  let prof = profile(provider)
+  let (key, resolvedBase, resolvedModel) = ?resolveClientConfig(
+    provider, apiKey, baseUrl, defaultModel,
+  )
 
   var client = AsyncJevClient(
+    provider: prof,
     apiKey: key,
     baseUrl: resolvedBase,
     defaultModel: resolvedModel,
     timeoutSec: timeoutSec,
     retryPolicy: retryPolicy,
-    defaultHeaders: mergeHeaders(buildDefaultHeaders(key), extraHeaders),
+    defaultHeaders: mergeHeaders(buildDefaultHeaders(prof, key), extraHeaders),
     ownsHttpClient: httpClient.isNone,
   )
   if httpClient.isSome:
@@ -95,6 +86,7 @@ proc newAsyncJevClient*(
   ok(client)
 
 proc newAsyncJevClientOrRaise*(
+    provider = typesafeAi;
     apiKey = "";
     baseUrl = "";
     defaultModel = "";
@@ -105,8 +97,8 @@ proc newAsyncJevClientOrRaise*(
     httpClient: Option[AsyncHttpClient] = none(AsyncHttpClient),
 ): AsyncJevClient =
   let created = newAsyncJevClient(
-    apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders, executor,
-    httpClient,
+    provider, apiKey, baseUrl, defaultModel, timeoutSec, retryPolicy, extraHeaders,
+    executor, httpClient,
   )
   if created.isErr:
     raiseFailure(created.unsafeError)
@@ -166,11 +158,10 @@ proc systemOne*(
     questions: Questions;
     options = defaultRequestOptions(),
 ): Future[Result[SystemOneResponse, JevFailure]] {.async.} =
-  let validated = validateQuestions(questions)
-  if validated.isErr:
-    return err(validationFailure(validated.unsafeError))
   let (model, _, _, _) = resolveAsyncOptions(client, options)
-  let payload = encodeSystemOneBody(state, model, questions)
+  let payload = ?encodeSystemOneBody(
+    client.provider, state, model, questions, options.keepAlive,
+  )
   let httpResp = ?(await sendAsyncRequest(client, "POST", SystemOnePath, $payload, options))
   decodeSystemOneResponse(httpResp.body, httpResp.headers)
 
@@ -204,8 +195,9 @@ proc systemOneOrRaise*(
 proc listModels*(
     client: AsyncJevClient; options = defaultRequestOptions(),
 ): Future[Result[ListModelsResponse, JevFailure]] {.async.} =
-  let httpResp = ?(await sendAsyncRequest(client, "GET", ModelsPath, "", options))
-  decodeListModelsResponse(httpResp.body, httpResp.headers)
+  let path = listModelsPath(client.provider)
+  let httpResp = ?(await sendAsyncRequest(client, "GET", path, "", options))
+  decodeListModelsResponse(client.provider, httpResp.body, httpResp.headers)
 
 proc listModelsOrRaise*(
     client: AsyncJevClient; options = defaultRequestOptions(),

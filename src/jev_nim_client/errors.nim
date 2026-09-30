@@ -1,4 +1,4 @@
-import std/[os, strutils, tables, options]
+import std/[json, os, strutils, tables, options]
 import results
 import constants
 
@@ -44,11 +44,18 @@ type
   JevResponseValidationError* = ref object of JevError
     fieldPath*: string
 
+proc parseApiErrorMessage*(body: string): string
+
 proc message*(f: JevFailure): string =
   case f.failureKind
   of jfkConfig: f.configMessage
   of jfkValidation: f.validationMessage
-  of jfkApi: "HTTP " & $f.status & " from " & f.endpoint
+  of jfkApi:
+    let detail = parseApiErrorMessage(f.body)
+    if detail.len > 0:
+      detail
+    else:
+      "HTTP " & $f.status & " from " & f.endpoint
   of jfkConnection: f.connectionMessage
   of jfkTimeout: "request timed out after " & $f.timeoutSec & "s"
   of jfkResponse:
@@ -62,6 +69,22 @@ proc configFailure*(msg: string): JevFailure =
 
 proc validationFailure*(msg: string): JevFailure =
   JevFailure(failureKind: jfkValidation, validationMessage: msg)
+
+proc parseApiErrorMessage*(body: string): string =
+  ## Extract a human-readable message from JSON error bodies (e.g. Ollama).
+  let trimmed = body.strip()
+  if trimmed.len == 0:
+    return ""
+  try:
+    let node = parseJson(trimmed)
+    if node.kind == JObject and "error" in node:
+      if node["error"].kind == JString:
+        return node["error"].getStr()
+      if node["error"].kind == JObject and "message" in node["error"]:
+        return node["error"]["message"].getStr()
+  except JsonParsingError:
+    discard
+  trimmed
 
 proc apiFailure*(
     status: int; body, endpoint: string; headers: Table[string, string],
